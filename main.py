@@ -71,6 +71,42 @@ class ChatService:
                     "conversation_history": conversation_history or []
                 }
     
+    def process_message_without_transaction(self, user_input: str, conversation_history: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Process a user message through the chat workflow WITHOUT creating a new transaction.
+        
+        This method is used by the web API to work within the existing HTTP transaction context.
+        All spans created within this method will become children of the current transaction.
+        """
+        try:
+            result = self.chat_graph.process_chat(user_input, conversation_history)
+            
+            return {
+                "success": True,
+                "response": result.get("processed_response", ""),
+                "conversation_history": result.get("conversation_history", []),
+                "metadata": {
+                    "workflow_completed": True,
+                    "token_timing": result.get("token_timing"),
+                    "response_metadata": result.get("response_metadata", {})
+                }
+            }
+            
+        except Exception as e:
+            sentry_sdk.capture_exception(e)
+            
+            return {
+                "success": False,
+                "error": str(e),
+                "response": "I apologize, but I encountered an error processing your request. Please try again.",
+                "conversation_history": conversation_history or [],
+                "metadata": {
+                    "workflow_completed": False,
+                    "error": str(e),
+                    "error_type": type(e).__name__
+                }
+            }
+    
     def run_interactive_chat(self):
         """Run an interactive chat session."""
         print("\n🤖 Chat Service Started!")

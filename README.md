@@ -295,30 +295,103 @@ export SENTRY_DSN="your-sentry-dsn"
 export SENTRY_ENVIRONMENT="development"
 ```
 
-### 5. Run the Example
+### 5. Choose Your Mode
+
+#### CLI Mode (Interactive Chat)
 ```bash
-python example.py
+python main.py
 ```
 
-### 6. Check Sentry
+#### Web API Mode (HTTP Server)
+```bash
+python web_main.py
+```
+
+Then test the API:
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello, how are you?"}'
+```
+
+### 6. Test Both Modes
+```bash
+python test_web_integration.py
+```
+
+### 7. Check Sentry
 Visit your Sentry project to see the traces and AI Agent dashboard.
 
 ## 📁 Repository Structure
 
 ```
 ai-chat-instrumentation/
-├── README.md              # This comprehensive guide
-├── requirements.txt       # Python dependencies
-├── setup.py              # Setup verification script
-├── example.py            # Example usage script
-├── test_chat.py          # Test script
-├── .env.template         # Environment variables template
-├── .gitignore           # Git ignore rules
-├── main.py              # Main application (transaction creation)
-├── state_graph.py       # LangGraph StateGraph implementation
-├── chat_nodes.py        # Individual node functions with spans
-├── sentry_config.py     # Sentry SDK configuration
-└── config.py            # Pydantic settings
+├── README.md                    # This comprehensive guide
+├── requirements.txt             # Python dependencies (includes Starlette)
+├── setup.py                    # Setup verification script
+├── example.py                  # Example usage script
+├── test_chat.py                # Test script
+├── test_web_integration.py     # Web integration test script
+├── .env.template               # Environment variables template
+├── .gitignore                 # Git ignore rules
+├── main.py                    # CLI application (transaction creation)
+├── web_main.py                # Web server entry point
+├── web_app.py                 # Starlette ASGI application
+├── api_routes.py              # HTTP API routes and handlers
+├── state_graph.py             # LangGraph StateGraph implementation
+├── chat_nodes.py              # Individual node functions with spans
+├── sentry_config.py           # Sentry SDK configuration
+└── config.py                  # Pydantic settings
+```
+
+## 🌐 Web API Features
+
+The project now supports both CLI and Web API modes:
+
+### API Endpoints
+
+- **`POST /chat`** - Send chat messages
+  ```json
+  {
+    "message": "Hello, how are you?",
+    "conversation_history": []
+  }
+  ```
+
+- **`GET /health`** - Health check
+- **`GET /info`** - Service information
+
+### Web Mode Benefits
+
+- ✅ **HTTP API Access**: RESTful interface for integration
+- ✅ **Concurrent Requests**: Handle multiple users simultaneously  
+- ✅ **Enhanced Sentry**: HTTP transactions with web-specific context
+- ✅ **CORS Support**: Ready for frontend integration
+- ✅ **Production Ready**: ASGI server with proper middleware
+
+### Usage Examples
+
+**Start Web Server:**
+```bash
+python web_main.py
+```
+
+**Test API:**
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the capital of France?"}'
+```
+
+**Python Client:**
+```python
+import requests
+
+response = requests.post("http://localhost:8000/chat", json={
+    "message": "Hello!",
+    "conversation_history": []
+})
+print(response.json())
 ```
 
 ## 🔍 Key Learnings
@@ -329,6 +402,7 @@ ai-chat-instrumentation/
 4. **Span Context**: All spans must be created within transaction context
 5. **Custom Spans**: Work perfectly alongside LangChain integration
 6. **Flask Conflicts**: Block Flask auto-detection to prevent issues
+7. **Dual Mode Support**: CLI and Web API can coexist without conflicts
 
 ## 📝 License
 
