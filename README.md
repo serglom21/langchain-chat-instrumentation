@@ -2,14 +2,6 @@
 
 This repository demonstrates how to properly instrument a LangChain application using StateGraph with Sentry for comprehensive AI Agent monitoring and custom span tracking.
 
-## 🎯 What This Example Solves
-
-Many developers struggle with:
-- **Missing child spans** in Sentry traces (only seeing root transaction)
-- **No AI Agent monitoring data** in Sentry dashboard
-- **Conflicts between LangChain integration and custom spans**
-- **Proper transaction hierarchy** for StateGraph workflows
-
 This example provides a **complete working solution** with proper span hierarchy and AI Agent monitoring.
 
 ## 🏗️ Architecture Overview
