@@ -6,6 +6,37 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain.callbacks.base import BaseCallbackHandler
 from sentry_config import instrument_node_operation, track_token_timing, add_custom_attributes
+from functools import wraps
+
+
+def instrument_node(node_name: str, operation_type: str = "processing"):
+    """
+    Decorator to automatically instrument node methods with Sentry spans.
+    
+    This eliminates the need for manual instrumentation in each node method.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, state: Dict[str, Any]) -> Dict[str, Any]:
+            with sentry_sdk.start_span(
+                op="node_operation",
+                name=f"Node: {node_name}"
+            ) as span:
+                span.set_tag("node_name", node_name)
+                span.set_tag("operation_type", operation_type)
+                
+                try:
+                    result = func(self, state)
+                    span.set_data("execution_successful", True)
+                    return result
+                except Exception as e:
+                    span.set_data("execution_successful", False)
+                    span.set_data("error", str(e))
+                    span.set_data("error_type", type(e).__name__)
+                    sentry_sdk.capture_exception(e)
+                    raise
+        return wrapper
+    return decorator
 
 
 class ComprehensiveSentryCallback(BaseCallbackHandler):
@@ -248,319 +279,301 @@ class ChatNodes:
         )
         self.sentry_callback = ComprehensiveSentryCallback()
     
+    @instrument_node("input_validation", "validation")
     def input_validation_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Validate and preprocess user input."""
-        # Create span within transaction context
-        with sentry_sdk.start_span(
-            op="node_operation",
-            name="Node: input_validation"
-        ) as span:
-            span.set_tag("node_name", "input_validation")
-            span.set_tag("operation_type", "validation")
-            
-            user_input = state.get("user_input", "")
-            
-            if not user_input.strip():
-                raise ValueError("User input cannot be empty")
-            
-            # Add validation attributes
-            add_custom_attributes(
-                input_length=len(user_input),
-                has_question_mark="?" in user_input,
-                word_count=len(user_input.split())
-            )
-            
-            return {
-                **state,
-                "validated_input": user_input.strip(),
-                "validation_timestamp": time.time()
-            }
+        user_input = state.get("user_input", "")
+        
+        if not user_input.strip():
+            raise ValueError("User input cannot be empty")
+        
+        # Add validation attributes
+        add_custom_attributes(
+            input_length=len(user_input),
+            has_question_mark="?" in user_input,
+            word_count=len(user_input.split())
+        )
+        
+        return {
+            **state,
+            "validated_input": user_input.strip(),
+            "validation_timestamp": time.time()
+        }
     
+    @instrument_node("context_preparation", "preprocessing")
     def context_preparation_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare context and system prompt."""
-        # Create span within transaction context
-        with sentry_sdk.start_span(
-            op="node_operation",
-            name="Node: context_preparation"
-        ) as span:
-            span.set_tag("node_name", "context_preparation")
-            span.set_tag("operation_type", "preprocessing")
-            validated_input = state.get("validated_input", "")
-            conversation_history = state.get("conversation_history", [])
-            
-            # Prepare system message
-            system_prompt = """You are a helpful AI assistant. Provide clear, concise, and accurate responses. 
-            If you don't know something, say so rather than making up information."""
-            
-            # Prepare messages
-            messages = [SystemMessage(content=system_prompt)]
-            
-            # Add conversation history
-            for msg in conversation_history[-5:]:  # Keep last 5 messages for context
-                if msg.get("role") == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
-                elif msg.get("role") == "assistant":
-                    messages.append(AIMessage(content=msg["content"]))
-            
-            # Add current user input
-            messages.append(HumanMessage(content=validated_input))
-            
-            add_custom_attributes(
-                context_messages_count=len(messages),
-                history_length=len(conversation_history)
-            )
-            
-            return {
-                **state,
-                "messages": messages,
-                "context_prepared_at": time.time()
-            }
+        validated_input = state.get("validated_input", "")
+        conversation_history = state.get("conversation_history", [])
+        
+        # Prepare system message
+        system_prompt = """You are a helpful AI assistant. Provide clear, concise, and accurate responses. 
+        If you don't know something, say so rather than making up information."""
+        
+        # Prepare messages
+        messages = [SystemMessage(content=system_prompt)]
+        
+        # Add conversation history
+        for msg in conversation_history[-5:]:  # Keep last 5 messages for context
+            if msg.get("role") == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg.get("role") == "assistant":
+                messages.append(AIMessage(content=msg["content"]))
+        
+        # Add current user input
+        messages.append(HumanMessage(content=validated_input))
+        
+        add_custom_attributes(
+            context_messages_count=len(messages),
+            history_length=len(conversation_history)
+        )
+        
+        return {
+            **state,
+            "messages": messages,
+            "context_prepared_at": time.time()
+        }
     
+    # Example: Adding a new node is now simple - just add the decorator!
+    @instrument_node("example_new_node", "custom_processing")
+    def example_new_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Example of how easy it is to add a new instrumented node."""
+        # Your custom logic here
+        processed_data = state.get("some_data", "")
+        
+        # Add custom attributes if needed
+        add_custom_attributes(
+            processed_length=len(processed_data),
+            node_name="example_new_node"
+        )
+        
+        return {
+            **state,
+            "processed_data": processed_data,
+            "processed_at": time.time()
+        }
+    
+    @instrument_node("llm_generation", "generation")
     def llm_generation_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Generate response using LLM with comprehensive instrumentation."""
-        # Create span within transaction context
-        with sentry_sdk.start_span(
-            op="node_operation",
-            name="Node: llm_generation"
-        ) as span:
-            span.set_tag("node_name", "llm_generation")
-            span.set_tag("operation_type", "generation")
-            messages = state.get("messages", [])
-            
-            try:
-                # Create manual AI span to ensure proper AI instrumentation
+        messages = state.get("messages", [])
+        
+        try:
+            # Create manual AI span to ensure proper AI instrumentation
+            with sentry_sdk.start_span(
+                op="ai.chat",
+                name="LLM Generation with OpenAI GPT-3.5-turbo"
+            ) as ai_span:
+                ai_span.set_data("gen_ai.system", "openai")
+                ai_span.set_data("gen_ai.operation.name", "chat")
+                ai_span.set_data("gen_ai.model_name", "gpt-3.5-turbo")
+                ai_span.set_data("gen_ai.provider", "openai")
+                
+                # Generate response with detailed instrumentation
                 with sentry_sdk.start_span(
-                    op="ai.chat",
-                    name="LLM Generation with OpenAI GPT-3.5-turbo"  # Use 'name' instead of 'description'
-                ) as ai_span:
-                    ai_span.set_data("gen_ai.system", "openai")
-                    ai_span.set_data("gen_ai.operation.name", "chat")
-                    ai_span.set_data("gen_ai.model_name", "gpt-3.5-turbo")
-                    ai_span.set_data("gen_ai.provider", "openai")
+                    op="ai.chat.invoke",
+                    name="LangChain LLM Invoke"
+                ) as invoke_span:
+                    invoke_span.set_data("messages_count", len(messages))
+                    invoke_span.set_data("model", "gpt-3.5-turbo")
                     
-                    # Generate response with detailed instrumentation
+                    # Add spans for LangChain internal operations
                     with sentry_sdk.start_span(
-                        op="ai.chat.invoke",
-                        name="LangChain LLM Invoke"
-                    ) as invoke_span:
-                        invoke_span.set_data("messages_count", len(messages))
-                        invoke_span.set_data("model", "gpt-3.5-turbo")
-                        
-                        # Add spans for LangChain internal operations
-                        with sentry_sdk.start_span(
-                            op="ai.chat.preprocess",
-                            name="LangChain Message Preprocessing"
-                        ) as preprocess_span:
-                            # This captures any message formatting/preprocessing
-                            pass
-                        
-                        with sentry_sdk.start_span(
-                            op="ai.chat.generate",
-                            name="Streaming LangChain Generate Call with Token Timing"
-                        ) as generate_span:
-                            # Add performance optimizations
-                            generate_span.set_data("optimization_applied", True)
-                            generate_span.set_data("streaming_enabled", True)
-                            generate_span.set_data("max_tokens", 1000)
-                            generate_span.set_data("timeout_seconds", 30)
-                            
-                            # Simple caching for repeated queries
-                            cache_key = str([msg.content for msg in messages])
-                            if cache_key in self.response_cache:
-                                generate_span.set_data("cache_hit", True)
-                                generate_span.set_data("cache_performance_gain", "~1400ms")
-                                response = self.response_cache[cache_key]
-                                # For cached responses, set timing to 0
-                                token_timing_data = {
-                                    "time_to_first_token_ms": 0,
-                                    "time_to_last_token_ms": 0
-                                }
-                            else:
-                                generate_span.set_data("cache_hit", False)
-                                
-                                # Track token timing for streaming responses
-                                first_token_time = None
-                                last_token_time = None
-                                full_response_content = ""
-                                
-                                # Generate response with token timing simulation
-                                # Since we're using streaming=True but invoke(), we'll simulate timing
-                                start_time = time.time()
-                                
-                                # Generate response with optimized configuration
-                                response = self.llm.invoke(
-                                    messages,
-                                    config={
-                                        "callbacks": [self.sentry_callback],
-                                        "metadata": {"optimized": True, "streaming": True}
-                                    }
-                                )
-                                
-                                # Simulate token timing (in real streaming, this would be measured per chunk)
-                                first_token_time = start_time + 0.1  # Simulate 100ms to first token
-                                last_token_time = time.time()  # Actual completion time
-                                full_response_content = response.content
-                                
-                                # Set final token timing
-                                if last_token_time:
-                                    generate_span.set_data("time_to_last_token_ms", 
-                                                         int((last_token_time - start_time) * 1000))
-                                
-                                # Store timing data for workflow span
-                                token_timing_data = {
-                                    "time_to_first_token_ms": int((first_token_time - start_time) * 1000) if first_token_time else None,
-                                    "time_to_last_token_ms": int((last_token_time - start_time) * 1000) if last_token_time else None
-                                }
-                                
-                                # Response is already created by invoke()
-                                
-                                # Cache the response (limit cache size)
-                                if len(self.response_cache) < 10:
-                                    self.response_cache[cache_key] = response
+                        op="ai.chat.preprocess",
+                        name="LangChain Message Preprocessing"
+                    ) as preprocess_span:
+                        # This captures any message formatting/preprocessing
+                        pass
                     
-                    # Process response with instrumentation
                     with sentry_sdk.start_span(
-                        op="ai.chat.process_response",
-                        name="Process LLM Response"
-                    ) as process_span:
-                        generated_text = response.content
-                        process_span.set_data("response_length", len(generated_text))
+                        op="ai.chat.generate",
+                        name="Streaming LangChain Generate Call with Token Timing"
+                    ) as generate_span:
+                        # Add performance optimizations
+                        generate_span.set_data("optimization_applied", True)
+                        generate_span.set_data("streaming_enabled", True)
+                        generate_span.set_data("max_tokens", 1000)
+                        generate_span.set_data("timeout_seconds", 30)
                         
-                        # Add response data to AI span
-                        ai_span.set_data("gen_ai.response.choices", [
-                            {
-                                "message": {
-                                    "content": generated_text,
-                                    "role": "assistant"
-                                }
+                        # Simple caching for repeated queries
+                        cache_key = str([msg.content for msg in messages])
+                        if cache_key in self.response_cache:
+                            generate_span.set_data("cache_hit", True)
+                            generate_span.set_data("cache_performance_gain", "~1400ms")
+                            response = self.response_cache[cache_key]
+                            # For cached responses, set timing to 0
+                            token_timing_data = {
+                                "time_to_first_token_ms": 0,
+                                "time_to_last_token_ms": 0
                             }
-                        ])
-                        ai_span.set_data("gen_ai.response.usage", {
-                            "completion_tokens": len(generated_text.split()),
-                            "prompt_tokens": sum(len(str(msg).split()) for msg in messages),
-                            "total_tokens": len(generated_text.split()) + sum(len(str(msg).split()) for msg in messages)
-                        })
+                        else:
+                            generate_span.set_data("cache_hit", False)
+                            
+                            # Track token timing for streaming responses
+                            first_token_time = None
+                            last_token_time = None
+                            full_response_content = ""
+                            
+                            # Generate response with token timing simulation
+                            # Since we're using streaming=True but invoke(), we'll simulate timing
+                            start_time = time.time()
+                            
+                            # Generate response with optimized configuration
+                            response = self.llm.invoke(
+                                messages,
+                                config={
+                                    "callbacks": [self.sentry_callback],
+                                    "metadata": {"optimized": True, "streaming": True}
+                                }
+                            )
+                            
+                            # Simulate token timing (in real streaming, this would be measured per chunk)
+                            first_token_time = start_time + 0.1  # Simulate 100ms to first token
+                            last_token_time = time.time()  # Actual completion time
+                            full_response_content = response.content
+                            
+                            # Set final token timing
+                            if last_token_time:
+                                generate_span.set_data("time_to_last_token_ms", 
+                                                     int((last_token_time - start_time) * 1000))
+                            
+                            # Store timing data for workflow span
+                            token_timing_data = {
+                                "time_to_first_token_ms": int((first_token_time - start_time) * 1000) if first_token_time else None,
+                                "time_to_last_token_ms": int((last_token_time - start_time) * 1000) if last_token_time else None
+                            }
+                            
+                            # Response is already created by invoke()
+                            
+                            # Cache the response (limit cache size)
+                            if len(self.response_cache) < 10:
+                                self.response_cache[cache_key] = response
                 
-                add_custom_attributes(
-                    response_length=len(generated_text),
-                    generation_successful=True,
-                    node_name="llm_generation"
-                )
-                
-                return {
-                    **state,
-                    "generated_response": generated_text,
-                    "generation_timestamp": time.time(),
-                    "token_timing": {
-                        "generation_completed": True,
-                        "response_length": len(generated_text),
-                        **token_timing_data  # Include the timing metrics
-                    }
+                # Process response with instrumentation
+                with sentry_sdk.start_span(
+                    op="ai.chat.process_response",
+                    name="Process LLM Response"
+                ) as process_span:
+                    generated_text = response.content
+                    process_span.set_data("response_length", len(generated_text))
+                    
+                    # Add response data to AI span
+                    ai_span.set_data("gen_ai.response.choices", [
+                        {
+                            "message": {
+                                "content": generated_text,
+                                "role": "assistant"
+                            }
+                        }
+                    ])
+                    ai_span.set_data("gen_ai.response.usage", {
+                        "completion_tokens": len(generated_text.split()),
+                        "prompt_tokens": sum(len(str(msg).split()) for msg in messages),
+                        "total_tokens": len(generated_text.split()) + sum(len(str(msg).split()) for msg in messages)
+                    })
+            
+            add_custom_attributes(
+                response_length=len(generated_text),
+                generation_successful=True,
+                node_name="llm_generation"
+            )
+            
+            return {
+                **state,
+                "generated_response": generated_text,
+                "generation_timestamp": time.time(),
+                "token_timing": {
+                    "generation_completed": True,
+                    "response_length": len(generated_text),
+                    **token_timing_data  # Include the timing metrics
                 }
-                
-            except Exception as e:
-                # Add error to AI span if it exists
-                if 'ai_span' in locals():
-                    ai_span.set_data("gen_ai.error", str(e))
-                    ai_span.set_data("gen_ai.response.successful", False)
-                
-                add_custom_attributes(
-                    generation_successful=False,
-                    error_type=type(e).__name__,
-                    node_name="llm_generation"
-                )
-                sentry_sdk.capture_exception(e)
-                raise
+            }
+            
+        except Exception as e:
+            # Add error to AI span if it exists
+            if 'ai_span' in locals():
+                ai_span.set_data("gen_ai.error", str(e))
+                ai_span.set_data("gen_ai.response.successful", False)
+            
+            add_custom_attributes(
+                generation_successful=False,
+                error_type=type(e).__name__,
+                node_name="llm_generation"
+            )
+            sentry_sdk.capture_exception(e)
+            raise
     
+    @instrument_node("response_processing", "postprocessing")
     def response_processing_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Process and format the response."""
-        # Create span within transaction context
-        with sentry_sdk.start_span(
-            op="node_operation",
-            name="Node: response_processing"
-        ) as span:
-            span.set_tag("node_name", "response_processing")
-            span.set_tag("operation_type", "postprocessing")
-            generated_response = state.get("generated_response", "")
-            
-            # Basic response processing
-            processed_response = generated_response.strip()
-            
-            # Add metadata
-            response_metadata = {
-                "processed_at": time.time(),
-                "word_count": len(processed_response.split()),
-                "character_count": len(processed_response)
-            }
-            
-            add_custom_attributes(
-                processed_response_length=len(processed_response),
-                processing_successful=True
-            )
-            
-            return {
-                **state,
-                "processed_response": processed_response,
-                "response_metadata": response_metadata
-            }
+        generated_response = state.get("generated_response", "")
+        
+        # Basic response processing
+        processed_response = generated_response.strip()
+        
+        # Add metadata
+        response_metadata = {
+            "processed_at": time.time(),
+            "word_count": len(processed_response.split()),
+            "character_count": len(processed_response)
+        }
+        
+        add_custom_attributes(
+            processed_response_length=len(processed_response),
+            processing_successful=True
+        )
+        
+        return {
+            **state,
+            "processed_response": processed_response,
+            "response_metadata": response_metadata
+        }
     
+    @instrument_node("conversation_update", "state_update")
     def conversation_update_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Update conversation history."""
-        # Create span within transaction context
-        with sentry_sdk.start_span(
-            op="node_operation",
-            name="Node: conversation_update"
-        ) as span:
-            span.set_tag("node_name", "conversation_update")
-            span.set_tag("operation_type", "state_update")
-            user_input = state.get("validated_input", "")
-            processed_response = state.get("processed_response", "")
-            conversation_history = state.get("conversation_history", [])
-            
-            # Add new messages to history
-            new_messages = [
-                {"role": "user", "content": user_input, "timestamp": time.time()},
-                {"role": "assistant", "content": processed_response, "timestamp": time.time()}
-            ]
-            
-            updated_history = conversation_history + new_messages
+        user_input = state.get("validated_input", "")
+        processed_response = state.get("processed_response", "")
+        conversation_history = state.get("conversation_history", [])
+        
+        # Add new messages to history
+        new_messages = [
+            {"role": "user", "content": user_input, "timestamp": time.time()},
+            {"role": "assistant", "content": processed_response, "timestamp": time.time()}
+        ]
+        
+        updated_history = conversation_history + new_messages
+        
+        add_custom_attributes(
+            conversation_length=len(updated_history),
+            update_successful=True
+        )
+        
+        return {
+            **state,
+            "conversation_history": updated_history,
+            "conversation_updated_at": time.time()
+        }
+    
+    @instrument_node("error_handling", "error_handling")
+    def error_handling_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle errors and provide fallback response."""
+        error = state.get("error", None)
+        
+        if error:
+            error_message = f"I apologize, but I encountered an error: {str(error)}. Please try again."
             
             add_custom_attributes(
-                conversation_length=len(updated_history),
-                update_successful=True
+                error_handled=True,
+                error_type=type(error).__name__
             )
             
             return {
                 **state,
-                "conversation_history": updated_history,
-                "conversation_updated_at": time.time()
+                "processed_response": error_message,
+                "error_handled": True,
+                "error_handled_at": time.time()
             }
-    
-    def error_handling_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle errors and provide fallback response."""
-        # Create span within transaction context
-        with sentry_sdk.start_span(
-            op="node_operation",
-            name="Node: error_handling"
-        ) as span:
-            span.set_tag("node_name", "error_handling")
-            span.set_tag("operation_type", "error_handling")
-            error = state.get("error", None)
-            
-            if error:
-                error_message = f"I apologize, but I encountered an error: {str(error)}. Please try again."
-                
-                add_custom_attributes(
-                    error_handled=True,
-                    error_type=type(error).__name__
-                )
-                
-                return {
-                    **state,
-                    "processed_response": error_message,
-                    "error_handled": True,
-                    "error_handled_at": time.time()
-                }
-            
-            return state
+        
+        return state
 

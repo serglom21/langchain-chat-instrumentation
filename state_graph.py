@@ -10,8 +10,8 @@ from sentry_config import create_root_span
 def create_instrumented_node(node_func, node_name: str):
     """Create an instrumented node function with Sentry spans."""
     def instrumented_node(state: Dict[str, Any]) -> Dict[str, Any]:
-        # The node function will create its own spans within the transaction context
-        # We just need to execute it and handle errors
+        # The node function is now decorated with @instrument_node, so it handles its own instrumentation
+        # We just need to execute it and handle any additional errors
         try:
             result = node_func(state)
             return result
