@@ -96,6 +96,18 @@ class ChatStateGraph:
                 
                 workflow_span.set_data("result_keys", list(result.keys()) if result else [])
                 workflow_span.set_data("execution_successful", True)
+                
+                # Add token timing metrics to workflow span
+                if result and "token_timing" in result:
+                    token_timing = result["token_timing"]
+                    if "time_to_first_token_ms" in token_timing:
+                        workflow_span.set_data("time_to_first_token_ms", token_timing["time_to_first_token_ms"])
+                    if "time_to_last_token_ms" in token_timing:
+                        workflow_span.set_data("time_to_last_token_ms", token_timing["time_to_last_token_ms"])
+                    
+                    # Add custom attributes for easy querying
+                    sentry_sdk.set_tag("time_to_first_token_ms", token_timing.get("time_to_first_token_ms", "N/A"))
+                    sentry_sdk.set_tag("time_to_last_token_ms", token_timing.get("time_to_last_token_ms", "N/A"))
             
             # Add workflow completion attributes
             sentry_sdk.set_tag("workflow_completed", True)
