@@ -1,13 +1,15 @@
 """Starlette web application for the AI chat service."""
 import sentry_sdk
 from starlette.applications import Starlette
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, FileResponse
+from starlette.staticfiles import StaticFiles
 from api_routes import api_handler
+import os
 
 
 class SentryMiddleware(BaseHTTPMiddleware):
@@ -38,13 +40,22 @@ class SentryMiddleware(BaseHTTPMiddleware):
         return response
 
 
+async def serve_chat_ui(request: Request):
+    """Serve the chat UI."""
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    chat_file = os.path.join(static_dir, "chat.html")
+    return FileResponse(chat_file)
+
+
 # Create Starlette application
 app = Starlette(
     debug=True,
     routes=[
+        Route("/", serve_chat_ui, methods=["GET"]),
         Route("/chat", api_handler.chat_endpoint, methods=["POST"]),
         Route("/health", api_handler.health_endpoint, methods=["GET"]),
         Route("/info", api_handler.info_endpoint, methods=["GET"]),
+        Mount("/static", StaticFiles(directory="static"), name="static"),
     ],
     middleware=[
         Middleware(
@@ -66,9 +77,11 @@ async def startup_event():
     print("🚀 AI Chat Web Service Starting...")
     print("📡 Sentry instrumentation enabled")
     print("🌐 Web API available at:")
+    print("   GET  / - Chat UI")
     print("   POST /chat - Send chat messages")
-    print("   GET /health - Health check")
-    print("   GET /info - Service information")
+    print("   GET  /health - Health check")
+    print("   GET  /info - Service information")
+    print("\n💡 Open your browser to: http://localhost:8000")
 
 
 @app.on_event("shutdown")

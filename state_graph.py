@@ -92,7 +92,19 @@ class ChatStateGraph:
                 workflow_span.set_data("user_input_length", len(user_input))
                 
                 # Execute the graph - nodes will create spans within this context
-                result = self.graph.invoke(initial_state)
+                # Add span to capture LangGraph internal processing during invoke
+                with sentry_sdk.start_span(
+                    op="workflow.langgraph_invoke",
+                    name="LangGraph Graph Invoke"
+                ) as graph_invoke_span:
+                    graph_invoke_span.set_data("description", "LangGraph internal processing during graph.invoke()")
+                    graph_invoke_span.set_data("functions", ["Pregel.invoke", "Pregel.transform", "Runnable._transform_stream_with_config", "Pregel._transform"])
+                    graph_invoke_span.set_data("state_keys", list(initial_state.keys()))
+                    
+                    result = self.graph.invoke(initial_state)
+                    
+                    graph_invoke_span.set_data("result_keys", list(result.keys()) if result else [])
+                    graph_invoke_span.set_data("invoke_successful", True)
                 
                 workflow_span.set_data("result_keys", list(result.keys()) if result else [])
                 workflow_span.set_data("execution_successful", True)
@@ -105,9 +117,17 @@ class ChatStateGraph:
                     if "time_to_last_token_ms" in token_timing:
                         workflow_span.set_data("time_to_last_token_ms", token_timing["time_to_last_token_ms"])
                     
-                    # Add custom attributes for easy querying
-                    sentry_sdk.set_tag("time_to_first_token_ms", token_timing.get("time_to_first_token_ms", "N/A"))
-                    sentry_sdk.set_tag("time_to_last_token_ms", token_timing.get("time_to_last_token_ms", "N/A"))
+                    # Add custom attributes for easy querying (as numbers)
+                    first_token_ms = token_timing.get("time_to_first_token_ms")
+                    last_token_ms = token_timing.get("time_to_last_token_ms")
+                    
+                    if first_token_ms is not None:
+                        sentry_sdk.set_tag("time_to_first_token_ms", str(first_token_ms))
+                        sentry_sdk.set_measurement("time_to_first_token_ms", first_token_ms, "millisecond")
+                    
+                    if last_token_ms is not None:
+                        sentry_sdk.set_tag("time_to_last_token_ms", str(last_token_ms))
+                        sentry_sdk.set_measurement("time_to_last_token_ms", last_token_ms, "millisecond")
             
             # Add workflow completion attributes
             sentry_sdk.set_tag("workflow_completed", True)

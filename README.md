@@ -2,7 +2,39 @@
 
 This repository demonstrates how to properly instrument a LangChain application using StateGraph with Sentry for comprehensive AI Agent monitoring and custom span tracking.
 
-This example provides a **complete working solution** with proper span hierarchy and AI Agent monitoring.
+This example provides a **complete working solution** with proper span hierarchy, AI Agent monitoring, and a beautiful web chat interface.
+
+## 🎨 Web Chat Interface
+
+Try the interactive chat UI to test the instrumentation:
+
+```bash
+./start_chat_ui.sh
+# Then open http://localhost:8000
+```
+
+See [CHAT_UI_README.md](CHAT_UI_README.md) for details.
+
+## 🔬 NEW: Side-by-Side Comparison
+
+**Compare custom instrumentation vs auto-instrumentation in isolation!**
+
+We've created a complete baseline version that uses ONLY Sentry's out-of-the-box auto-instrumentation. Run both versions side-by-side to see exactly what data you gain from custom instrumentation:
+
+```bash
+# Start both servers (different ports)
+./compare_both.sh
+
+# Or start individually:
+python web_main.py          # Custom (port 8000, purple theme)
+python baseline_web_main.py  # Baseline (port 8001, orange theme)
+```
+
+**Then compare traces in Sentry:**
+- Custom version: `production` environment
+- Baseline version: `production-baseline` environment
+
+See [COMPARISON_GUIDE.md](COMPARISON_GUIDE.md) for detailed comparison instructions.
 
 ## 🏗️ Architecture Overview
 

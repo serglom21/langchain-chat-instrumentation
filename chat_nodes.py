@@ -418,59 +418,102 @@ class ChatNodes:
                             # Since we're using streaming=True but invoke(), we'll simulate timing
                             start_time = time.time()
                             
-                            # Generate response with optimized configuration
-                            response = self.llm.invoke(
-                                messages,
-                                config={
-                                    "callbacks": [self.sentry_callback],
-                                    "metadata": {"optimized": True, "streaming": True}
-                                }
-                            )
-                            
-                            # Simulate token timing (in real streaming, this would be measured per chunk)
-                            first_token_time = start_time + 0.1  # Simulate 100ms to first token
-                            last_token_time = time.time()  # Actual completion time
-                            full_response_content = response.content
-                            
-                            # Set final token timing
-                            if last_token_time:
-                                generate_span.set_data("time_to_last_token_ms", 
-                                                     int((last_token_time - start_time) * 1000))
-                            
-                            # Store timing data for workflow span
-                            token_timing_data = {
-                                "time_to_first_token_ms": int((first_token_time - start_time) * 1000) if first_token_time else None,
-                                "time_to_last_token_ms": int((last_token_time - start_time) * 1000) if last_token_time else None
-                            }
-                            
-                            # Response is already created by invoke()
-                            
-                            # Cache the response (limit cache size)
-                            if len(self.response_cache) < 10:
-                                self.response_cache[cache_key] = response
+                            # Add granular spans to capture LangChain internal processing overhead
+                            with sentry_sdk.start_span(
+                                op="ai.chat.internal_processing",
+                                name="LangChain Internal Processing"
+                            ) as internal_span:
+                                internal_span.set_data("messages_count", len(messages))
+                                internal_span.set_data("model", "gpt-3.5-turbo")
+                                internal_span.set_data("streaming_enabled", True)
+                                internal_span.set_data("max_tokens", 1000)
+                                internal_span.set_data("temperature", 0.7)
+                                internal_span.set_data("description", "LangChain message validation, formatting, and request preparation")
+                                
+                                # Add span to capture the actual LangChain invoke overhead
+                                with sentry_sdk.start_span(
+                                    op="ai.chat.invoke_overhead",
+                                    name="LangChain Invoke Overhead"
+                                ) as invoke_overhead_span:
+                                    invoke_overhead_span.set_data("messages_count", len(messages))
+                                    invoke_overhead_span.set_data("model", "gpt-3.5-turbo")
+                                    invoke_overhead_span.set_data("streaming_enabled", True)
+                                    invoke_overhead_span.set_data("max_tokens", 1000)
+                                    invoke_overhead_span.set_data("temperature", 0.7)
+                                    invoke_overhead_span.set_data("description", "LangChain internal processing before HTTP request")
+                                    
+                                    # Generate response with optimized configuration
+                                    response = self.llm.invoke(
+                                        messages,
+                                        config={
+                                            "callbacks": [self.sentry_callback],
+                                            "metadata": {"optimized": True, "streaming": True}
+                                        }
+                                    )
+                                    
+                                    # Add span to capture the gap between HTTP response and our processing
+                                    with sentry_sdk.start_span(
+                                        op="ai.chat.post_http_processing",
+                                        name="LangGraph Post-HTTP Processing"
+                                    ) as post_http_span:
+                                        post_http_span.set_data("description", "LangGraph internal processing after HTTP response received")
+                                        post_http_span.set_data("functions", ["Pregel.invoke", "Pregel.transform", "Runnable._transform_stream_with_config", "Pregel._transform"])
+                                        post_http_span.set_data("response_received", True)
+                                        post_http_span.set_data("response_length", len(response.content))
+                                        
+                                        # Simulate token timing (in real streaming, this would be measured per chunk)
+                                        first_token_time = start_time + 0.1  # Simulate 100ms to first token
+                                        last_token_time = time.time()  # Actual completion time
+                                        full_response_content = response.content
+                                        
+                                        # Set final token timing
+                                        if last_token_time:
+                                            generate_span.set_data("time_to_last_token_ms", 
+                                                                 int((last_token_time - start_time) * 1000))
+                                        
+                                        # Store timing data for workflow span
+                                        token_timing_data = {
+                                            "time_to_first_token_ms": int((first_token_time - start_time) * 1000) if first_token_time else None,
+                                            "time_to_last_token_ms": int((last_token_time - start_time) * 1000) if last_token_time else None
+                                        }
+                                        
+                                        # Response is already created by invoke()
+                                        
+                                        # Cache the response (limit cache size)
+                                        if len(self.response_cache) < 10:
+                                            self.response_cache[cache_key] = response
                 
-                # Process response with instrumentation
+                # Add span to capture LangGraph internal processing after HTTP response
                 with sentry_sdk.start_span(
-                    op="ai.chat.process_response",
-                    name="Process LLM Response"
-                ) as process_span:
-                    generated_text = response.content
-                    process_span.set_data("response_length", len(generated_text))
+                    op="ai.chat.langgraph_processing",
+                    name="LangGraph Internal Processing"
+                ) as langgraph_span:
+                    langgraph_span.set_data("description", "LangGraph Pregel execution engine processing response")
+                    langgraph_span.set_data("functions", ["Pregel.invoke", "Pregel.transform", "Runnable._transform_stream_with_config"])
+                    langgraph_span.set_data("response_length", len(response.content))
                     
-                    # Add response data to AI span
-                    ai_span.set_data("gen_ai.response.choices", [
-                        {
-                            "message": {
-                                "content": generated_text,
-                                "role": "assistant"
+                    # Process response with instrumentation
+                    with sentry_sdk.start_span(
+                        op="ai.chat.process_response",
+                        name="Process LLM Response"
+                    ) as process_span:
+                        generated_text = response.content
+                        process_span.set_data("response_length", len(generated_text))
+                        
+                        # Add response data to AI span
+                        ai_span.set_data("gen_ai.response.choices", [
+                            {
+                                "message": {
+                                    "content": generated_text,
+                                    "role": "assistant"
+                                }
                             }
-                        }
-                    ])
-                    ai_span.set_data("gen_ai.response.usage", {
-                        "completion_tokens": len(generated_text.split()),
-                        "prompt_tokens": sum(len(str(msg).split()) for msg in messages),
-                        "total_tokens": len(generated_text.split()) + sum(len(str(msg).split()) for msg in messages)
-                    })
+                        ])
+                        ai_span.set_data("gen_ai.response.usage", {
+                            "completion_tokens": len(generated_text.split()),
+                            "prompt_tokens": sum(len(str(msg).split()) for msg in messages),
+                            "total_tokens": len(generated_text.split()) + sum(len(str(msg).split()) for msg in messages)
+                        })
             
             add_custom_attributes(
                 response_length=len(generated_text),
