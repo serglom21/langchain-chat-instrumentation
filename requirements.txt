@@ -9,3 +9,15 @@ pydantic-settings==2.1.0
 typing-extensions==4.8.0
 starlette>=0.27.0
 uvicorn>=0.23.0
+
+# OpenTelemetry packages for OTLP instrumentation
+opentelemetry-api>=1.20.0
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-otlp-proto-http>=1.20.0
+opentelemetry-instrumentation>=0.41b0
+opentelemetry-instrumentation-flask>=0.41b0
+opentelemetry-instrumentation-starlette>=0.41b0
+opentelemetry-instrumentation-requests>=0.41b0
+opentelemetry-instrumentation-httpx>=0.41b0
+opentelemetry-semantic-conventions>=0.41b0
+flask>=2.0.0

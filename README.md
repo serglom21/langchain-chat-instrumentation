@@ -1,8 +1,11 @@
-# LangChain + StateGraph Sentry Instrumentation Example
+# LangChain + StateGraph Observability: Sentry SDK vs OpenTelemetry
 
-This repository demonstrates how to properly instrument a LangChain application using StateGraph with Sentry for comprehensive AI Agent monitoring and custom span tracking.
+This repository demonstrates **two approaches** to instrumenting a LangChain application using StateGraph:
 
-This example provides a **complete working solution** with proper span hierarchy, AI Agent monitoring, and a beautiful web chat interface.
+1. **Sentry SDK** - Direct Sentry instrumentation (original)
+2. **OpenTelemetry + OTLP** - Vendor-neutral instrumentation sending to Sentry (new)
+
+Both approaches provide **identical observability** with comprehensive AI Agent monitoring and custom span tracking. This example provides a **complete working solution** with proper span hierarchy, AI Agent monitoring, and beautiful web chat interfaces.
 
 ## 🎨 Web Chat Interface
 
@@ -15,26 +18,45 @@ Try the interactive chat UI to test the instrumentation:
 
 See [CHAT_UI_README.md](CHAT_UI_README.md) for details.
 
-## 🔬 NEW: Side-by-Side Comparison
+## 🔬 Three-Way Comparison
 
-**Compare custom instrumentation vs auto-instrumentation in isolation!**
+**Compare Sentry SDK vs OpenTelemetry vs Auto-Instrumentation!**
 
-We've created a complete baseline version that uses ONLY Sentry's out-of-the-box auto-instrumentation. Run both versions side-by-side to see exactly what data you gain from custom instrumentation:
+This repository now includes THREE implementations:
+
+1. **Sentry SDK with Custom Instrumentation** (Port 8000)
+   - Direct Sentry SDK integration
+   - Rich custom spans and attributes
+   - Environment: `production`
+
+2. **OpenTelemetry with Custom Instrumentation** (Port 8002)
+   - Vendor-neutral OpenTelemetry API
+   - Same rich instrumentation as Sentry SDK
+   - Sends to Sentry via OTLP protocol
+   - Environment: `production` (or custom)
+
+3. **Baseline Auto-Instrumentation Only** (Port 8001)
+   - ONLY Sentry's out-of-the-box auto-instrumentation
+   - No custom spans or attributes
+   - Environment: `production-baseline`
 
 ```bash
-# Start both servers (different ports)
+# Start all three servers
+python web_main.py          # Sentry SDK (port 8000)
+python otel_web_main.py     # OpenTelemetry (port 8002)
+python baseline_web_main.py # Baseline (port 8001)
+
+# Or use the comparison script for Sentry SDK vs Baseline
 ./compare_both.sh
 
-# Or start individually:
-python web_main.py          # Custom (port 8000, purple theme)
-python baseline_web_main.py  # Baseline (port 8001, orange theme)
+# Or use the OpenTelemetry startup script
+./start_otel_chat.sh
 ```
 
-**Then compare traces in Sentry:**
-- Custom version: `production` environment
-- Baseline version: `production-baseline` environment
-
-See [COMPARISON_GUIDE.md](COMPARISON_GUIDE.md) for detailed comparison instructions.
+**Documentation:**
+- [COMPARISON_GUIDE.md](COMPARISON_GUIDE.md) - Sentry SDK vs Baseline comparison
+- [OPENTELEMETRY_README.md](OPENTELEMETRY_README.md) - OpenTelemetry implementation guide
+- [OTEL_VS_SENTRY_COMPARISON.md](OTEL_VS_SENTRY_COMPARISON.md) - Detailed SDK vs OTel comparison
 
 ## 🏗️ Architecture Overview
 
@@ -350,22 +372,61 @@ Visit your Sentry project to see the traces and AI Agent dashboard.
 
 ```
 ai-chat-instrumentation/
-├── README.md                    # This comprehensive guide
-├── requirements.txt             # Python dependencies (includes Starlette)
-├── setup.py                    # Setup verification script
-├── example.py                  # Example usage script
-├── test_chat.py                # Test script
-├── test_web_integration.py     # Web integration test script
-├── .env.template               # Environment variables template
-├── .gitignore                 # Git ignore rules
-├── main.py                    # CLI application (transaction creation)
-├── web_main.py                # Web server entry point
-├── web_app.py                 # Starlette ASGI application
-├── api_routes.py              # HTTP API routes and handlers
-├── state_graph.py             # LangGraph StateGraph implementation
-├── chat_nodes.py              # Individual node functions with spans
-├── sentry_config.py           # Sentry SDK configuration
-└── config.py                  # Pydantic settings
+├── README.md                      # This comprehensive guide
+├── requirements.txt               # Python dependencies (includes OpenTelemetry)
+├── setup.py                      # Setup verification script
+├── .env.template                 # Environment variables template
+│
+├── 🟣 Sentry SDK Implementation
+│   ├── main.py                   # CLI application (Sentry SDK)
+│   ├── web_main.py               # Web server (Sentry SDK, port 8000)
+│   ├── web_app.py                # Starlette ASGI application
+│   ├── api_routes.py             # HTTP API routes
+│   ├── state_graph.py            # StateGraph with Sentry instrumentation
+│   ├── chat_nodes.py             # Chat nodes with Sentry spans
+│   └── sentry_config.py          # Sentry SDK configuration
+│
+├── 🔭 OpenTelemetry Implementation
+│   ├── otel_main.py              # CLI application (OpenTelemetry)
+│   ├── otel_web_main.py          # Web server (OpenTelemetry, port 8002)
+│   ├── otel_web_app.py           # Flask application (OpenTelemetry)
+│   ├── otel_state_graph.py       # StateGraph with OTel instrumentation
+│   ├── otel_chat_nodes.py        # Chat nodes with OTel spans
+│   ├── otel_config.py            # OpenTelemetry + Sentry OTLP setup
+│   └── otel_instrumentation.py   # OTel instrumentation helpers
+│
+├── 🟠 Baseline Implementation
+│   ├── baseline_main.py          # CLI application (auto-instrumentation only)
+│   ├── baseline_web_main.py      # Web server (baseline, port 8001)
+│   ├── baseline_web_app.py       # Baseline web application
+│   ├── baseline_state_graph.py   # StateGraph without custom spans
+│   ├── baseline_chat_nodes.py    # Chat nodes without custom spans
+│   └── baseline_sentry_config.py # Minimal Sentry configuration
+│
+├── 📚 Documentation
+│   ├── OPENTELEMETRY_README.md        # OpenTelemetry implementation guide
+│   ├── OTEL_VS_SENTRY_COMPARISON.md   # Detailed comparison
+│   ├── COMPARISON_GUIDE.md            # Sentry SDK vs Baseline guide
+│   ├── COMPARISON_SUMMARY.md          # Quick comparison summary
+│   ├── CHAT_UI_README.md              # Web chat interface guide
+│   └── ARCHITECTURE_COMPARISON.md     # Architecture details
+│
+├── 🧪 Testing & Utilities
+│   ├── test_chat.py              # Sentry SDK test script
+│   ├── test_otel.py              # OpenTelemetry test script
+│   ├── test_web_integration.py   # Web integration tests
+│   ├── compare_both.sh           # Start Sentry SDK + Baseline
+│   ├── start_chat_ui.sh          # Start Sentry SDK web UI
+│   └── start_otel_chat.sh        # Start OpenTelemetry web UI
+│
+├── 🎨 Static Files
+│   └── static/
+│       ├── chat.html             # Web chat UI (Sentry SDK)
+│       ├── baseline_chat.html    # Web chat UI (Baseline)
+│       └── README.md             # Static files documentation
+│
+└── ⚙️ Configuration
+    └── config.py                 # Pydantic settings (shared)
 ```
 
 ## 🌐 Web API Features

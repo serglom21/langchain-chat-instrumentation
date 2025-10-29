@@ -258,3 +258,4 @@ After comparing both versions, you should see that **custom instrumentation prov
 **Remember**: Both versions are running the SAME application logic. The only difference is the Sentry instrumentation level. This isolated comparison shows exactly what value custom instrumentation adds!
 
 
+
