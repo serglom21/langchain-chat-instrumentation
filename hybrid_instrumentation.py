@@ -83,7 +83,7 @@ def capture_exception_with_span_context(
         
         # Link to OpenTelemetry trace
         if otel_context:
-            # Add OTel trace ID as tags for searching
+            # Add OTel trace ID as tags for searching and linking
             # The 'trace' tag creates a searchable/clickable link in Sentry UI
             scope.set_tag("trace", otel_context["trace_id"])
             scope.set_tag("trace.id", otel_context["trace_id"])
