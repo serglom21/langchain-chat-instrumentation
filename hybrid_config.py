@@ -75,19 +75,8 @@ def init_hybrid_instrumentation(
         dsn=sentry_dsn,
         environment=environment,
         release=f"{service_name}@{service_version}",
-        
-        # CRITICAL: Set to 0 to disable Sentry's own tracing
-        # We use OpenTelemetry for traces, Sentry SDK only for errors
-        traces_sample_rate=0.0,
-        
         # Disable auto integrations to avoid conflicting with OTel instrumentation
-        auto_enabling_integrations=False,
-        
-        # Error tracking configuration
-        integrations=integrations,
-        attach_stacktrace=True,
-        send_default_pii=False,
-        before_send=before_send_hook,
+        #auto_enabling_integrations=False,
     )
     
     print(f"✅ Sentry SDK initialized (DSN: {sentry_dsn[:40]}...)")
