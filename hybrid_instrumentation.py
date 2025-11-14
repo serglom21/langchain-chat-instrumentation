@@ -19,8 +19,6 @@ from opentelemetry.semconv.trace import SpanAttributes
 import sentry_sdk
 from sentry_sdk import Hub
 
-from otel_config import get_tracer
-
 
 def get_otel_span_context() -> Optional[Dict[str, str]]:
     """
@@ -190,7 +188,7 @@ def instrument_node(node_name: str, operation_type: str = "processing"):
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(self, state: Dict[str, Any]) -> Dict[str, Any]:
-            tracer = get_tracer()
+            tracer = trace.get_tracer("hybrid-instrumentation")
             
             with tracer.start_as_current_span(
                 name=f"Node: {node_name}",
@@ -264,7 +262,7 @@ def create_span(
             span.set_attribute("model", "gpt-3.5-turbo")
             response = llm.invoke(messages)
     """
-    tracer = get_tracer()
+    tracer = trace.get_tracer("hybrid-instrumentation")
     
     with tracer.start_as_current_span(
         name=name,
