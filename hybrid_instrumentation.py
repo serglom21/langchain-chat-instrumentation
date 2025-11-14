@@ -83,10 +83,19 @@ def capture_exception_with_span_context(
         # Set level
         scope.level = level
         
-        # Add OTel trace context to Sentry
+        # Link to OpenTelemetry trace
         if otel_context:
+            # Add OTel trace ID as tags for searching
+            # The 'trace' tag creates a searchable/clickable link in Sentry UI
+            scope.set_tag("trace", otel_context["trace_id"])
+            scope.set_tag("trace.id", otel_context["trace_id"])
+            scope.set_tag("span.id", otel_context["span_id"])
+            
+            # Also add with otel prefix for clarity
             scope.set_tag("otel.trace_id", otel_context["trace_id"])
             scope.set_tag("otel.span_id", otel_context["span_id"])
+            
+            # Add full OpenTelemetry context
             scope.set_context("opentelemetry", {
                 "trace_id": otel_context["trace_id"],
                 "span_id": otel_context["span_id"],
@@ -510,4 +519,5 @@ def track_timing_metric(
             for key, value in attributes.items():
                 if isinstance(value, (str, int, float, bool)):
                     scope.set_tag(f"{metric_name}.{key}", value)
+
 

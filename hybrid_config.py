@@ -69,33 +69,21 @@ def init_hybrid_instrumentation(
             )
         )
     
+    print(f"🔧 DEBUG: About to initialize Sentry SDK (hybrid_config.py version)")
+    
     sentry_sdk.init(
         dsn=sentry_dsn,
         environment=environment,
         release=f"{service_name}@{service_version}",
         
-        # Performance monitoring (transactions)
-        traces_sample_rate=1.0,  # Adjust for production
+        # Disable auto integrations to avoid conflicting with OTel instrumentation
+        auto_enabling_integrations=False,
         
-        # Profiling (optional)
-        profiles_sample_rate=0.0,  # Disabled by default
-        
-        # Integrations
-        integrations=integrations,
-        
-        # Additional options
-        attach_stacktrace=True,
-        send_default_pii=False,
-        
-        # Before send hook (optional - for filtering/modifying events)
-        before_send=before_send_hook,
-        
-        # Important: Enable trace propagation to OpenTelemetry
-        # This allows Sentry to understand OTel trace context
-        propagate_traces=True,
     )
     
     print(f"✅ Sentry SDK initialized (DSN: {sentry_dsn[:40]}...)")
+    print(f"   - auto_enabling_integrations: False")
+    print(f"   - traces_sample_rate: 1.0")
     
     # =========================================================================
     # 2. Initialize OpenTelemetry (for distributed tracing)
@@ -230,4 +218,5 @@ if __name__ == "__main__":
     print("  from hybrid_config import init_hybrid_instrumentation")
     print("  init_hybrid_instrumentation()")
     shutdown_instrumentation()
+
 
