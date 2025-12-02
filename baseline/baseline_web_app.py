@@ -7,7 +7,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
-from baseline_api_routes import baseline_api_handler
+from baseline.baseline_api_routes import baseline_api_handler
 import os
 
 
@@ -59,6 +59,8 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown."""
     print("👋 Baseline AI Chat Web Service shutting down...")
+
+
 
 
 

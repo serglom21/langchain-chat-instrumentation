@@ -6,7 +6,7 @@ This allows you to run both versions side-by-side:
 - Port 8001: Baseline auto-instrumentation only
 """
 import uvicorn
-from baseline_web_app import app
+from baseline.baseline_web_app import app
 
 if __name__ == "__main__":
     print("\n" + "="*70)
@@ -21,6 +21,8 @@ if __name__ == "__main__":
         port=8001,  # Different port to run side-by-side
         log_level="info"
     )
+
+
 
 
 

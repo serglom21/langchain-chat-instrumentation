@@ -18,6 +18,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
+from sentry_sdk.integrations.otlp import OTLPIntegration
 
 
 def init_hybrid_instrumentation(
@@ -75,6 +76,8 @@ def init_hybrid_instrumentation(
         dsn=sentry_dsn,
         environment=environment,
         release=f"{service_name}@{service_version}",
+        integrations=[OTLPIntegration()]
+        #integrations=[OTLPIntegration()],
         # Disable auto integrations to avoid conflicting with OTel instrumentation
         #auto_enabling_integrations=False,
     )

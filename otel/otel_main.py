@@ -8,10 +8,10 @@ import sys
 import time
 from opentelemetry import trace
 
-from config import get_settings
-from otel_config import setup_opentelemetry, shutdown_opentelemetry
-from otel_state_graph import OtelChatStateGraph
-from otel_instrumentation import create_span, add_span_attributes
+from core.config import get_settings
+from otel.otel_config import setup_opentelemetry, shutdown_opentelemetry
+from otel.otel_state_graph import OtelChatStateGraph
+from otel.otel_instrumentation import create_span, add_span_attributes
 
 
 def run_chat_example():

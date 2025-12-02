@@ -8,10 +8,10 @@ import time
 import sys
 from opentelemetry import trace
 
-from otel_config import setup_opentelemetry, shutdown_opentelemetry, get_tracer
-from otel_state_graph import OtelChatStateGraph
-from otel_instrumentation import create_span, add_span_attributes
-from config import get_settings
+from otel.otel_config import setup_opentelemetry, shutdown_opentelemetry, get_tracer
+from otel.otel_state_graph import OtelChatStateGraph
+from otel.otel_instrumentation import create_span, add_span_attributes
+from core.config import get_settings
 
 
 def test_basic_span():

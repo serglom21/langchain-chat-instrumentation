@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode, Span
 from opentelemetry.semconv.trace import SpanAttributes
-from otel_config import get_tracer
+from otel.otel_config import get_tracer
 
 
 def instrument_node(node_name: str, operation_type: str = "processing"):

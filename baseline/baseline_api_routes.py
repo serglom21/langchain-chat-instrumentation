@@ -3,7 +3,7 @@ import json
 from typing import Dict, Any, List
 from starlette.responses import JSONResponse
 from starlette.requests import Request
-from baseline_main import BaselineChatService
+from baseline.baseline_main import BaselineChatService
 
 
 class BaselineChatAPIHandler:
@@ -76,6 +76,8 @@ class BaselineChatAPIHandler:
 
 # Create handler instance
 baseline_api_handler = BaselineChatAPIHandler()
+
+
 
 
 

@@ -7,7 +7,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME, SERVICE_VERSION
 from opentelemetry.semconv.resource import ResourceAttributes
-from config import get_settings
+from core.config import get_settings
 
 
 # Global tracer instance

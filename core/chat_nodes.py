@@ -1,34 +1,48 @@
-"""Chat service nodes with OpenTelemetry instrumentation."""
+"""Chat service nodes for StateGraph operations."""
 import time
+import sentry_sdk
 from typing import Dict, Any, List, Optional
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, AIMessage, SystemMessage
 from langchain.callbacks.base import BaseCallbackHandler
-from opentelemetry import trace
-from opentelemetry.trace import Status, StatusCode
-
-from otel_instrumentation import (
-    instrument_node,
-    create_span,
-    add_span_attributes,
-    add_span_event,
-    record_exception,
-    set_ai_attributes,
-    track_timing_metric,
-    set_span_attribute,
-)
-from otel_config import get_tracer
+from core.sentry_config import instrument_node_operation, track_token_timing, add_custom_attributes
+from functools import wraps
 
 
-class OpenTelemetryLangChainCallback(BaseCallbackHandler):
+def instrument_node(node_name: str, operation_type: str = "processing"):
     """
-    OpenTelemetry callback handler for comprehensive LangChain instrumentation.
+    Decorator to automatically instrument node methods with Sentry spans.
     
-    This replaces ComprehensiveSentryCallback with OpenTelemetry spans.
+    This eliminates the need for manual instrumentation in each node method.
     """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, state: Dict[str, Any]) -> Dict[str, Any]:
+            with sentry_sdk.start_span(
+                op="node_operation",
+                name=f"Node: {node_name}"
+            ) as span:
+                span.set_tag("node_name", node_name)
+                span.set_tag("operation_type", operation_type)
+                
+                try:
+                    result = func(self, state)
+                    span.set_data("execution_successful", True)
+                    return result
+                except Exception as e:
+                    span.set_data("execution_successful", False)
+                    span.set_data("error", str(e))
+                    span.set_data("error_type", type(e).__name__)
+                    sentry_sdk.capture_exception(e)
+                    raise
+        return wrapper
+    return decorator
+
+
+class ComprehensiveSentryCallback(BaseCallbackHandler):
+    """Comprehensive Sentry callback handler for full LangChain instrumentation."""
     
     def __init__(self):
-        self.tracer = get_tracer()
         self.spans = {}  # Track spans by run_id
         self.start_times = {}
         self.token_counts = {}
@@ -36,41 +50,38 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
     
     def _get_run_id(self, **kwargs) -> str:
         """Get unique run ID for tracking spans."""
-        return str(kwargs.get('run_id', str(time.time())))
+        return kwargs.get('run_id', str(time.time()))
     
     def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs) -> None:
-        """Called when LLM starts - create comprehensive OpenTelemetry span."""
+        """Called when LLM starts - create comprehensive Sentry span."""
         run_id = self._get_run_id(**kwargs)
         start_time = time.time()
         self.start_times[run_id] = start_time
         self.token_counts[run_id] = 0
         self.first_token_times[run_id] = None
         
-        # Create AI span following OpenTelemetry semantic conventions
-        span = self.tracer.start_span(
-            name=f"LLM: {serialized.get('name', 'unknown')}",
-            kind=trace.SpanKind.CLIENT,  # LLM call is a client operation
+        # Create comprehensive AI span
+        span = sentry_sdk.start_span(
+            op="ai.chat",
+            description=f"LLM: {serialized.get('name', 'unknown')}",
         )
         
-        # Set AI-specific attributes using semantic conventions
-        model_name = serialized.get('name', 'unknown')
-        set_ai_attributes(
-            span,
-            model=model_name,
-            operation="chat",
-            provider="openai",
-            prompts=prompts,
-        )
+        # Set AI-specific attributes
+        span.set_data("gen_ai.system", "openai")
+        span.set_data("gen_ai.operation.name", "chat")
+        span.set_data("gen_ai.model_name", serialized.get('name', 'unknown'))
+        span.set_data("gen_ai.provider", "openai")
+        span.set_data("gen_ai.request.prompts", prompts)
+        span.set_data("gen_ai.request.prompt_count", len(prompts))
         
         # Add timing info
-        span.set_attribute("llm.start_time", start_time)
-        span.set_attribute("llm.prompt_count", len(prompts))
+        span.set_data("start_time", start_time)
         
         self.spans[run_id] = span
         
         # Also add to current span context
-        add_span_attributes(
-            llm_model=model_name,
+        add_custom_attributes(
+            llm_model=serialized.get('name', 'unknown'),
             prompt_count=len(prompts),
             llm_start_time=start_time
         )
@@ -84,24 +95,16 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
                 self.first_token_times[run_id] = time.time()
                 
                 # Track time to first token
-                if run_id in self.start_times and run_id in self.spans:
+                if run_id in self.start_times:
                     time_to_first = self.first_token_times[run_id] - self.start_times[run_id]
-                    time_to_first_ms = time_to_first * 1000
-                    
-                    span = self.spans[run_id]
-                    span.set_attribute("gen_ai.response.time_to_first_token_ms", time_to_first_ms)
-                    span.set_attribute("gen_ai.response.time_to_first_token_seconds", time_to_first)
-                    
-                    # Add event for first token
-                    add_span_event("first_token_received", {
-                        "time_ms": time_to_first_ms,
-                        "token": token[:50]  # First 50 chars
-                    })
+                    if run_id in self.spans:
+                        self.spans[run_id].set_data("gen_ai.response.time_to_first_token", time_to_first)
+                        self.spans[run_id].set_data("time_to_first_token_ms", int(time_to_first * 1000))
             
             self.token_counts[run_id] += 1
     
     def on_llm_end(self, response: Any, **kwargs) -> None:
-        """Called when LLM ends - finalize OpenTelemetry span with comprehensive data."""
+        """Called when LLM ends - finalize Sentry span with comprehensive data."""
         run_id = self._get_run_id(**kwargs)
         
         if run_id in self.spans:
@@ -110,36 +113,36 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
             
             # Calculate metrics
             total_duration = end_time - self.start_times.get(run_id, end_time)
-            total_duration_ms = total_duration * 1000
             token_count = self.token_counts.get(run_id, 0)
             
-            # Add response data
-            response_text = str(response)
-            span.add_event("gen_ai.response.complete", {
-                "content_length": len(response_text),
-                "role": "assistant"
-            })
+            # Add comprehensive response data
+            span.set_data("gen_ai.response.choices", [
+                {
+                    "message": {
+                        "content": str(response),
+                        "role": "assistant"
+                    }
+                }
+            ])
             
             # Add token usage (estimated)
-            # In real implementation, this would come from response metadata
-            prompt_tokens = sum(len(str(p).split()) for p in span.attributes.get("gen_ai.prompt.count", []))
-            completion_tokens = token_count if token_count > 0 else len(response_text.split())
+            prompt_tokens = sum(len(str(p).split()) for p in span.data.get("gen_ai.request.prompts", []))
+            completion_tokens = token_count
             total_tokens = prompt_tokens + completion_tokens
             
-            span.set_attribute("gen_ai.usage.prompt_tokens", prompt_tokens)
-            span.set_attribute("gen_ai.usage.completion_tokens", completion_tokens)
-            span.set_attribute("gen_ai.usage.total_tokens", total_tokens)
+            span.set_data("gen_ai.response.usage", {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens
+            })
             
             # Add timing metrics
-            span.set_attribute("gen_ai.response.total_duration_ms", total_duration_ms)
-            span.set_attribute("gen_ai.response.total_duration_seconds", total_duration)
-            span.set_attribute("gen_ai.response.total_tokens", token_count)
-            
-            # Set successful status
-            span.set_status(Status(StatusCode.OK))
+            span.set_data("gen_ai.response.total_duration", total_duration)
+            span.set_data("total_duration_ms", int(total_duration * 1000))
+            span.set_data("total_tokens", token_count)
             
             # Finish the span
-            span.end()
+            span.finish()
             
             # Clean up tracking
             del self.spans[run_id]
@@ -148,7 +151,7 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
             if run_id in self.first_token_times:
                 del self.first_token_times[run_id]
         
-        add_span_attributes(
+        add_custom_attributes(
             llm_completion_time=time.time(),
             llm_successful=True
         )
@@ -159,14 +162,9 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
         
         if run_id in self.spans:
             span = self.spans[run_id]
-            
-            # Record exception
-            span.record_exception(error)
-            span.set_attribute("gen_ai.error", str(error))
-            span.set_attribute("gen_ai.response.successful", False)
-            span.set_status(Status(StatusCode.ERROR, str(error)))
-            
-            span.end()
+            span.set_data("gen_ai.error", str(error))
+            span.set_data("gen_ai.response.successful", False)
+            span.finish()
             
             # Clean up tracking
             del self.spans[run_id]
@@ -177,12 +175,12 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
             if run_id in self.first_token_times:
                 del self.first_token_times[run_id]
         
-        add_span_attributes(
+        add_custom_attributes(
             llm_successful=False,
             llm_error=type(error).__name__
         )
         
-        record_exception(error)
+        sentry_sdk.capture_exception(error)
     
     def on_chain_start(self, serialized: Dict[str, Any], inputs: Dict[str, Any], **kwargs) -> None:
         """Called when a chain starts - create chain span."""
@@ -191,21 +189,18 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
         self.start_times[run_id] = start_time
         
         # Create chain span
-        span = self.tracer.start_span(
-            name=f"Chain: {serialized.get('name', 'unknown')}",
-            kind=trace.SpanKind.INTERNAL,
+        span = sentry_sdk.start_span(
+            op="chain.execute",
+            description=f"Chain: {serialized.get('name', 'unknown')}",
         )
         
-        span.set_attribute("chain.name", serialized.get('name', 'unknown'))
-        span.set_attribute("chain.input_count", len(inputs))
-        span.set_attribute("chain.start_time", start_time)
-        
-        # Add inputs as event to avoid size limits
-        span.add_event("chain.inputs", {"keys": str(list(inputs.keys()))})
+        span.set_data("chain_name", serialized.get('name', 'unknown'))
+        span.set_data("chain_inputs", inputs)
+        span.set_data("start_time", start_time)
         
         self.spans[run_id] = span
         
-        add_span_attributes(
+        add_custom_attributes(
             chain_name=serialized.get('name', 'unknown'),
             chain_input_count=len(inputs)
         )
@@ -219,24 +214,19 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
             end_time = time.time()
             
             total_duration = end_time - self.start_times.get(run_id, end_time)
-            total_duration_ms = total_duration * 1000
             
-            span.set_attribute("chain.duration_ms", total_duration_ms)
-            span.set_attribute("chain.duration_seconds", total_duration)
-            span.set_attribute("chain.output_count", len(outputs))
+            span.set_data("chain_outputs", outputs)
+            span.set_data("chain_duration", total_duration)
+            span.set_data("duration_ms", int(total_duration * 1000))
             
-            # Add outputs as event
-            span.add_event("chain.outputs", {"keys": str(list(outputs.keys()))})
-            
-            span.set_status(Status(StatusCode.OK))
-            span.end()
+            span.finish()
             
             # Clean up tracking
             del self.spans[run_id]
             if run_id in self.start_times:
                 del self.start_times[run_id]
         
-        add_span_attributes(
+        add_custom_attributes(
             chain_completion_time=time.time(),
             chain_successful=True
         )
@@ -247,50 +237,47 @@ class OpenTelemetryLangChainCallback(BaseCallbackHandler):
         
         if run_id in self.spans:
             span = self.spans[run_id]
-            
-            span.record_exception(error)
-            span.set_attribute("chain.error", str(error))
-            span.set_attribute("chain.successful", False)
-            span.set_status(Status(StatusCode.ERROR, str(error)))
-            
-            span.end()
+            span.set_data("chain_error", str(error))
+            span.set_data("chain_successful", False)
+            span.finish()
             
             # Clean up tracking
             del self.spans[run_id]
             if run_id in self.start_times:
                 del self.start_times[run_id]
         
-        add_span_attributes(
+        add_custom_attributes(
             chain_successful=False,
             chain_error=type(error).__name__
         )
         
-        record_exception(error)
+        sentry_sdk.capture_exception(error)
 
 
-class OtelChatNodes:
-    """Collection of chat operation nodes with OpenTelemetry instrumentation."""
+class ChatNodes:
+    """Collection of chat operation nodes."""
     
     def __init__(self, openai_api_key: str):
         # Simple response cache to avoid redundant calls
         self.response_cache = {}
         
-        # Optimized LLM configuration
+        # Optimized LLM configuration for better performance with token timing
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
             model="gpt-3.5-turbo",
             temperature=0.7,
-            streaming=True,
-            max_retries=2,
-            request_timeout=30,
-            max_tokens=1000,
+            streaming=True,   # Enable streaming for token timing metrics
+            max_retries=2,    # Add retry logic
+            request_timeout=30,  # Set timeout to prevent hanging
+            max_tokens=1000,   # Limit response length for faster generation
+            # Performance optimizations
             model_kwargs={
-                "top_p": 0.9,
+                "top_p": 0.9,      # Optimize sampling
                 "frequency_penalty": 0.0,
                 "presence_penalty": 0.0
             }
         )
-        self.otel_callback = OpenTelemetryLangChainCallback()
+        self.sentry_callback = ComprehensiveSentryCallback()
     
     @instrument_node("input_validation", "validation")
     def input_validation_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -301,7 +288,7 @@ class OtelChatNodes:
             raise ValueError("User input cannot be empty")
         
         # Add validation attributes
-        add_span_attributes(
+        add_custom_attributes(
             input_length=len(user_input),
             has_question_mark="?" in user_input,
             word_count=len(user_input.split())
@@ -336,7 +323,7 @@ class OtelChatNodes:
         # Add current user input
         messages.append(HumanMessage(content=validated_input))
         
-        add_span_attributes(
+        add_custom_attributes(
             context_messages_count=len(messages),
             history_length=len(conversation_history)
         )
@@ -347,114 +334,142 @@ class OtelChatNodes:
             "context_prepared_at": time.time()
         }
     
+    # Example: Adding a new node is now simple - just add the decorator!
+    @instrument_node("example_new_node", "custom_processing")
+    def example_new_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Example of how easy it is to add a new instrumented node."""
+        # Your custom logic here
+        processed_data = state.get("some_data", "")
+        
+        # Add custom attributes if needed
+        add_custom_attributes(
+            processed_length=len(processed_data),
+            node_name="example_new_node"
+        )
+        
+        return {
+            **state,
+            "processed_data": processed_data,
+            "processed_at": time.time()
+        }
+    
     @instrument_node("llm_generation", "generation")
     def llm_generation_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate response using LLM with comprehensive OpenTelemetry instrumentation."""
+        """Generate response using LLM with comprehensive instrumentation."""
         messages = state.get("messages", [])
         
         try:
             # Create manual AI span to ensure proper AI instrumentation
-            with create_span(
-                "LLM Generation with OpenAI GPT-3.5-turbo",
-                "ai.chat",
-                kind=trace.SpanKind.CLIENT
+            with sentry_sdk.start_span(
+                op="ai.chat",
+                name="LLM Generation with OpenAI GPT-3.5-turbo"
             ) as ai_span:
-                set_ai_attributes(
-                    ai_span,
-                    model="gpt-3.5-turbo",
-                    operation="chat",
-                    provider="openai"
-                )
+                ai_span.set_data("gen_ai.system", "openai")
+                ai_span.set_data("gen_ai.operation.name", "chat")
+                ai_span.set_data("gen_ai.model_name", "gpt-3.5-turbo")
+                ai_span.set_data("gen_ai.provider", "openai")
                 
                 # Generate response with detailed instrumentation
-                with create_span("LangChain LLM Invoke", "ai.chat.invoke") as invoke_span:
-                    invoke_span.set_attribute("messages_count", len(messages))
-                    invoke_span.set_attribute("model", "gpt-3.5-turbo")
+                with sentry_sdk.start_span(
+                    op="ai.chat.invoke",
+                    name="LangChain LLM Invoke"
+                ) as invoke_span:
+                    invoke_span.set_data("messages_count", len(messages))
+                    invoke_span.set_data("model", "gpt-3.5-turbo")
                     
                     # Add spans for LangChain internal operations
-                    with create_span("LangChain Message Preprocessing", "ai.chat.preprocess"):
+                    with sentry_sdk.start_span(
+                        op="ai.chat.preprocess",
+                        name="LangChain Message Preprocessing"
+                    ) as preprocess_span:
+                        # This captures any message formatting/preprocessing
                         pass
                     
-                    with create_span(
-                        "Streaming LangChain Generate Call with Token Timing",
-                        "ai.chat.generate"
+                    with sentry_sdk.start_span(
+                        op="ai.chat.generate",
+                        name="Streaming LangChain Generate Call with Token Timing"
                     ) as generate_span:
                         # Add performance optimizations
-                        generate_span.set_attribute("optimization_applied", True)
-                        generate_span.set_attribute("streaming_enabled", True)
-                        generate_span.set_attribute("max_tokens", 1000)
-                        generate_span.set_attribute("timeout_seconds", 30)
+                        generate_span.set_data("optimization_applied", True)
+                        generate_span.set_data("streaming_enabled", True)
+                        generate_span.set_data("max_tokens", 1000)
+                        generate_span.set_data("timeout_seconds", 30)
                         
                         # Simple caching for repeated queries
                         cache_key = str([msg.content for msg in messages])
                         if cache_key in self.response_cache:
-                            generate_span.set_attribute("cache_hit", True)
-                            add_span_event("cache_hit", {
-                                "cache_key_hash": str(hash(cache_key)),
-                                "performance_gain": "~1400ms"
-                            })
+                            generate_span.set_data("cache_hit", True)
+                            generate_span.set_data("cache_performance_gain", "~1400ms")
                             response = self.response_cache[cache_key]
+                            # For cached responses, set timing to 0
                             token_timing_data = {
                                 "time_to_first_token_ms": 0,
                                 "time_to_last_token_ms": 0
                             }
                         else:
-                            generate_span.set_attribute("cache_hit", False)
+                            generate_span.set_data("cache_hit", False)
                             
                             # Track token timing for streaming responses
                             first_token_time = None
                             last_token_time = None
                             full_response_content = ""
                             
+                            # Generate response with token timing simulation
+                            # Since we're using streaming=True but invoke(), we'll simulate timing
                             start_time = time.time()
                             
                             # Add granular spans to capture LangChain internal processing overhead
-                            with create_span(
-                                "LangChain Internal Processing",
-                                "ai.chat.internal_processing"
+                            with sentry_sdk.start_span(
+                                op="ai.chat.internal_processing",
+                                name="LangChain Internal Processing"
                             ) as internal_span:
-                                internal_span.set_attribute("messages_count", len(messages))
-                                internal_span.set_attribute("model", "gpt-3.5-turbo")
-                                internal_span.set_attribute("streaming_enabled", True)
-                                internal_span.set_attribute("description", 
-                                    "LangChain message validation, formatting, and request preparation")
+                                internal_span.set_data("messages_count", len(messages))
+                                internal_span.set_data("model", "gpt-3.5-turbo")
+                                internal_span.set_data("streaming_enabled", True)
+                                internal_span.set_data("max_tokens", 1000)
+                                internal_span.set_data("temperature", 0.7)
+                                internal_span.set_data("description", "LangChain message validation, formatting, and request preparation")
                                 
                                 # Add span to capture the actual LangChain invoke overhead
-                                with create_span(
-                                    "LangChain Invoke Overhead",
-                                    "ai.chat.invoke_overhead"
+                                with sentry_sdk.start_span(
+                                    op="ai.chat.invoke_overhead",
+                                    name="LangChain Invoke Overhead"
                                 ) as invoke_overhead_span:
-                                    invoke_overhead_span.set_attribute("description", 
-                                        "LangChain internal processing before HTTP request")
+                                    invoke_overhead_span.set_data("messages_count", len(messages))
+                                    invoke_overhead_span.set_data("model", "gpt-3.5-turbo")
+                                    invoke_overhead_span.set_data("streaming_enabled", True)
+                                    invoke_overhead_span.set_data("max_tokens", 1000)
+                                    invoke_overhead_span.set_data("temperature", 0.7)
+                                    invoke_overhead_span.set_data("description", "LangChain internal processing before HTTP request")
                                     
                                     # Generate response with optimized configuration
                                     response = self.llm.invoke(
                                         messages,
                                         config={
-                                            "callbacks": [self.otel_callback],
+                                            "callbacks": [self.sentry_callback],
                                             "metadata": {"optimized": True, "streaming": True}
                                         }
                                     )
                                     
                                     # Add span to capture the gap between HTTP response and our processing
-                                    with create_span(
-                                        "LangGraph Post-HTTP Processing",
-                                        "ai.chat.post_http_processing"
+                                    with sentry_sdk.start_span(
+                                        op="ai.chat.post_http_processing",
+                                        name="LangGraph Post-HTTP Processing"
                                     ) as post_http_span:
-                                        post_http_span.set_attribute("description", 
-                                            "LangGraph internal processing after HTTP response received")
-                                        post_http_span.set_attribute("response_received", True)
-                                        post_http_span.set_attribute("response_length", len(response.content))
+                                        post_http_span.set_data("description", "LangGraph internal processing after HTTP response received")
+                                        post_http_span.set_data("functions", ["Pregel.invoke", "Pregel.transform", "Runnable._transform_stream_with_config", "Pregel._transform"])
+                                        post_http_span.set_data("response_received", True)
+                                        post_http_span.set_data("response_length", len(response.content))
                                         
-                                        # Simulate token timing
-                                        first_token_time = start_time + 0.1
-                                        last_token_time = time.time()
+                                        # Simulate token timing (in real streaming, this would be measured per chunk)
+                                        first_token_time = start_time + 0.1  # Simulate 100ms to first token
+                                        last_token_time = time.time()  # Actual completion time
                                         full_response_content = response.content
                                         
                                         # Set final token timing
                                         if last_token_time:
-                                            time_to_last_ms = int((last_token_time - start_time) * 1000)
-                                            generate_span.set_attribute("time_to_last_token_ms", time_to_last_ms)
+                                            generate_span.set_data("time_to_last_token_ms", 
+                                                                 int((last_token_time - start_time) * 1000))
                                         
                                         # Store timing data for workflow span
                                         token_timing_data = {
@@ -462,34 +477,45 @@ class OtelChatNodes:
                                             "time_to_last_token_ms": int((last_token_time - start_time) * 1000) if last_token_time else None
                                         }
                                         
-                                        # Cache the response
+                                        # Response is already created by invoke()
+                                        
+                                        # Cache the response (limit cache size)
                                         if len(self.response_cache) < 10:
                                             self.response_cache[cache_key] = response
                 
                 # Add span to capture LangGraph internal processing after HTTP response
-                with create_span("LangGraph Internal Processing", "ai.chat.langgraph_processing") as langgraph_span:
-                    langgraph_span.set_attribute("description", 
-                        "LangGraph Pregel execution engine processing response")
-                    langgraph_span.set_attribute("response_length", len(response.content))
+                with sentry_sdk.start_span(
+                    op="ai.chat.langgraph_processing",
+                    name="LangGraph Internal Processing"
+                ) as langgraph_span:
+                    langgraph_span.set_data("description", "LangGraph Pregel execution engine processing response")
+                    langgraph_span.set_data("functions", ["Pregel.invoke", "Pregel.transform", "Runnable._transform_stream_with_config"])
+                    langgraph_span.set_data("response_length", len(response.content))
                     
                     # Process response with instrumentation
-                    with create_span("Process LLM Response", "ai.chat.process_response") as process_span:
+                    with sentry_sdk.start_span(
+                        op="ai.chat.process_response",
+                        name="Process LLM Response"
+                    ) as process_span:
                         generated_text = response.content
-                        process_span.set_attribute("response_length", len(generated_text))
+                        process_span.set_data("response_length", len(generated_text))
                         
                         # Add response data to AI span
-                        set_ai_attributes(
-                            ai_span,
-                            model="gpt-3.5-turbo",
-                            response=generated_text,
-                            token_usage={
-                                "completion_tokens": len(generated_text.split()),
-                                "prompt_tokens": sum(len(str(msg).split()) for msg in messages),
-                                "total_tokens": len(generated_text.split()) + sum(len(str(msg).split()) for msg in messages)
+                        ai_span.set_data("gen_ai.response.choices", [
+                            {
+                                "message": {
+                                    "content": generated_text,
+                                    "role": "assistant"
+                                }
                             }
-                        )
+                        ])
+                        ai_span.set_data("gen_ai.response.usage", {
+                            "completion_tokens": len(generated_text.split()),
+                            "prompt_tokens": sum(len(str(msg).split()) for msg in messages),
+                            "total_tokens": len(generated_text.split()) + sum(len(str(msg).split()) for msg in messages)
+                        })
             
-            add_span_attributes(
+            add_custom_attributes(
                 response_length=len(generated_text),
                 generation_successful=True,
                 node_name="llm_generation"
@@ -502,17 +528,22 @@ class OtelChatNodes:
                 "token_timing": {
                     "generation_completed": True,
                     "response_length": len(generated_text),
-                    **token_timing_data
+                    **token_timing_data  # Include the timing metrics
                 }
             }
             
         except Exception as e:
-            add_span_attributes(
+            # Add error to AI span if it exists
+            if 'ai_span' in locals():
+                ai_span.set_data("gen_ai.error", str(e))
+                ai_span.set_data("gen_ai.response.successful", False)
+            
+            add_custom_attributes(
                 generation_successful=False,
                 error_type=type(e).__name__,
                 node_name="llm_generation"
             )
-            record_exception(e)
+            sentry_sdk.capture_exception(e)
             raise
     
     @instrument_node("response_processing", "postprocessing")
@@ -530,7 +561,7 @@ class OtelChatNodes:
             "character_count": len(processed_response)
         }
         
-        add_span_attributes(
+        add_custom_attributes(
             processed_response_length=len(processed_response),
             processing_successful=True
         )
@@ -556,7 +587,7 @@ class OtelChatNodes:
         
         updated_history = conversation_history + new_messages
         
-        add_span_attributes(
+        add_custom_attributes(
             conversation_length=len(updated_history),
             update_successful=True
         )
@@ -575,7 +606,7 @@ class OtelChatNodes:
         if error:
             error_message = f"I apologize, but I encountered an error: {str(error)}. Please try again."
             
-            add_span_attributes(
+            add_custom_attributes(
                 error_handled=True,
                 error_type=type(error).__name__
             )
@@ -588,5 +619,4 @@ class OtelChatNodes:
             }
         
         return state
-
 

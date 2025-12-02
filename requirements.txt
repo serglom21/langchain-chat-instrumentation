@@ -2,7 +2,7 @@ langchain==0.1.0
 langchain-openai==0.0.5
 langgraph==0.0.20
 openai>=1.10.0,<2.0.0
-sentry-sdk[langchain]>=2.0.0
+sentry-sdk[langchain,opentelemetry]>=2.46.0
 python-dotenv==1.0.0
 pydantic==2.5.2
 pydantic-settings==2.1.0

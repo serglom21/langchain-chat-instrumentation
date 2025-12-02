@@ -6,9 +6,9 @@ auto-instrumentation. Compare traces from this app vs the custom
 instrumented version to see the difference.
 """
 from typing import Dict, Any, List
-from config import get_settings
-from baseline_sentry_config import setup_baseline_sentry
-from baseline_state_graph import BaselineChatStateGraph
+from core.config import get_settings
+from baseline.baseline_sentry_config import setup_baseline_sentry
+from baseline.baseline_state_graph import BaselineChatStateGraph
 
 
 class BaselineChatService:
@@ -105,6 +105,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
 
 

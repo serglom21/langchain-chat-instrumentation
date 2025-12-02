@@ -8,8 +8,8 @@ Your existing CLI functionality in main.py remains unchanged.
 import os
 import sys
 import uvicorn
-from sentry_config import setup_sentry
-from config import get_settings
+from core.sentry_config import setup_sentry
+from core.config import get_settings
 
 
 def main():

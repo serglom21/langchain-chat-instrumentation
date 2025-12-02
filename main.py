@@ -9,9 +9,9 @@ This file demonstrates the key pattern for Sentry instrumentation:
 import os
 import sys
 from typing import Dict, Any, List
-from config import get_settings
-from sentry_config import setup_sentry
-from state_graph import ChatStateGraph
+from core.config import get_settings
+from core.sentry_config import setup_sentry
+from core.state_graph import ChatStateGraph
 import sentry_sdk
 
 

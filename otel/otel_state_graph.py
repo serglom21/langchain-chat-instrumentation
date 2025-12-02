@@ -5,14 +5,14 @@ from opentelemetry.trace import Status, StatusCode
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from otel_chat_nodes import OtelChatNodes
-from otel_instrumentation import (
+from otel.otel_chat_nodes import OtelChatNodes
+from otel.otel_instrumentation import (
     create_span,
     add_span_attributes,
     record_exception,
     track_timing_metric,
 )
-from otel_config import get_tracer
+from otel.otel_config import get_tracer
 
 
 def create_instrumented_node(node_func, node_name: str):

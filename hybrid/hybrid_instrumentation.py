@@ -99,10 +99,11 @@ def capture_exception_with_span_context(
                 "span_id": otel_context["span_id"],
                 "trace_flags": otel_context["trace_flags"],
             })
+            '''
             scope.set_context("trace", {
                 "trace_id": otel_context["trace_id"],
                 "span_id": otel_context["span_id"]
-            })
+            })'''
         
         # Add custom tags
         if tags:

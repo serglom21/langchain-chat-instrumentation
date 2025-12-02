@@ -6,7 +6,7 @@ auto-instrumentation - no manual spans or transactions.
 """
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
-from baseline_chat_nodes import BaselineChatNodes
+from baseline.baseline_chat_nodes import BaselineChatNodes
 
 
 class BaselineChatStateGraph:
@@ -71,6 +71,8 @@ class BaselineChatStateGraph:
                 "processed_response": "I apologize, but I encountered an error processing your request. Please try again.",
                 "conversation_history": conversation_history or []
             }
+
+
 
 
 

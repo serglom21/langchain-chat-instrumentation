@@ -3,8 +3,8 @@ import sentry_sdk
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from chat_nodes import ChatNodes
-from sentry_config import create_root_span
+from core.chat_nodes import ChatNodes
+from core.sentry_config import create_root_span
 
 
 def create_instrumented_node(node_func, node_name: str):

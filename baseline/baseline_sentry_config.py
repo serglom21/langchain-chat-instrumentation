@@ -7,7 +7,7 @@ to see the difference.
 """
 import sentry_sdk
 from sentry_sdk.integrations.langchain import LangchainIntegration
-from config import get_settings
+from core.config import get_settings
 
 
 def setup_baseline_sentry() -> None:

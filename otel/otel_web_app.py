@@ -9,10 +9,10 @@ from opentelemetry import trace
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.trace import Status, StatusCode
 
-from config import get_settings
-from otel_config import setup_opentelemetry, get_tracer
-from otel_state_graph import OtelChatStateGraph
-from otel_instrumentation import add_span_attributes, record_exception
+from core.config import get_settings
+from otel.otel_config import setup_opentelemetry, get_tracer
+from otel.otel_state_graph import OtelChatStateGraph
+from otel.otel_instrumentation import add_span_attributes, record_exception
 
 
 # Initialize Flask app

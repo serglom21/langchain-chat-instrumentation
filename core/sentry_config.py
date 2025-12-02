@@ -5,7 +5,7 @@ import sentry_sdk
 from sentry_sdk.tracing import Span
 from sentry_sdk.integrations.langchain import LangchainIntegration
 from sentry_sdk.integrations.openai import OpenAIIntegration
-from config import get_settings
+from core.config import get_settings
 
 
 def setup_sentry() -> None:

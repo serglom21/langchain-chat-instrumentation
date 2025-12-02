@@ -19,16 +19,16 @@ from starlette.staticfiles import StaticFiles
 from opentelemetry import trace
 from opentelemetry.instrumentation.starlette import StarletteInstrumentor
 
-from config import get_settings
-from hybrid_config import init_hybrid_instrumentation, shutdown_instrumentation
-from hybrid_instrumentation import (
+from core.config import get_settings
+from hybrid.hybrid_config import init_hybrid_instrumentation, shutdown_instrumentation
+from hybrid.hybrid_instrumentation import (
     create_span,
     capture_exception_with_span_context,
     add_span_attributes,
     add_span_annotation,
     track_timing_metric,
 )
-from otel_state_graph import OtelChatStateGraph
+from otel.otel_state_graph import OtelChatStateGraph
 
 
 # Initialize HYBRID instrumentation (both OTel and Sentry SDK)
